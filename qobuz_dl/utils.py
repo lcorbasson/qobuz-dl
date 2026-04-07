@@ -115,10 +115,12 @@ def smart_discography_filter(
         Used to group two albums that may be named similarly, but not exactly
         the same.
         """
+        # FIXME put in a PR
         r = album
         r = re.sub(r"\([^\)]*\)", "", r)
         r = re.sub(r"\[[^\]]*\)", "", r)
         return r.strip().lower()
+        # /FIXME put in a PR
 
     requested_artist = contents[0]["name"]
     items = [item["albums"]["items"] for item in contents][0]
@@ -189,4 +191,9 @@ def get_url_info(url):
         r"?\/(album|artist|track|playlist|label)(?:\/[-\w\d]+)?\/([\w\d]+)",
         url,
     )
-    return r.groups()
+    try:
+        return r.groups()
+    except AttributeError:
+        print(url)
+        raise
+

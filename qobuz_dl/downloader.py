@@ -5,6 +5,8 @@ from typing import Tuple
 import requests
 from pathvalidate import sanitize_filename, sanitize_filepath
 from tqdm import tqdm
+import datetime
+import time
 
 import qobuz_dl.metadata as metadata
 from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN
@@ -43,6 +45,7 @@ class Download:
         no_cover: bool = False,
         folder_format=None,
         track_format=None,
+        dry_run=False,
     ):
         self.client = client
         self.item_id = item_id
@@ -55,6 +58,7 @@ class Download:
         self.no_cover = no_cover
         self.folder_format = folder_format or DEFAULT_FOLDER
         self.track_format = track_format or DEFAULT_TRACK
+        self.dry_run = dry_run
 
     def download_id_by_type(self, track=True):
         if not track:
@@ -87,9 +91,15 @@ class Download:
             )
             return
 
+        try:
+            url = meta.get("url")
+        except KeyError:
+            logger.info(f"{OFF}URL not found")
+
         logger.info(
             f"\n{YELLOW}Downloading: {album_title}\nQuality: {file_format}"
             f" ({bit_depth}/{sampling_rate})\n"
+            f"{url}\n"
         )
         album_attr = self._get_album_attr(
             meta, album_title, file_format, bit_depth, sampling_rate
@@ -97,23 +107,31 @@ class Download:
         folder_format, track_format = _clean_format_str(
             self.folder_format, self.track_format, file_format
         )
-        sanitized_title = sanitize_filepath(folder_format.format(**album_attr))
+        # FIXME put in a PR
+        sanitized_album_attr = {
+            attr: sanitize_filename(str(value)) for attr, value in album_attr.items()
+        }
+        sanitized_title = sanitize_filepath(folder_format.format(**sanitized_album_attr))
+        # /FIXME put in a PR
         dirn = os.path.join(self.path, sanitized_title)
         os.makedirs(dirn, exist_ok=True)
 
         if self.no_cover:
             logger.info(f"{OFF}Skipping cover")
-        else:
+        elif not self.dry_run:
             _get_extra(meta["image"]["large"], dirn, og_quality=self.cover_og_quality)
 
         if "goodies" in meta:
             try:
-                _get_extra(meta["goodies"][0]["url"], dirn, "booklet.pdf")
+                if not self.dry_run:
+                    _get_extra(meta["goodies"][0]["url"], dirn, "booklet.pdf")
             except:  # noqa
                 pass
         media_numbers = [track["media_number"] for track in meta["tracks"]["items"]]
         is_multiple = True if len([*{*media_numbers}]) > 1 else False
         for i in meta["tracks"]["items"]:
+            if count > 0:
+                time.sleep(1)  # brief pause between tracks to avoid CDN rate limiting
             parse = self.client.get_track_url(i["id"], fmt_id=self.quality)
             if "sample" not in parse and parse["sampling_rate"]:
                 is_mp3 = True if int(self.quality) == 5 else False
@@ -162,7 +180,7 @@ class Download:
             os.makedirs(dirn, exist_ok=True)
             if self.no_cover:
                 logger.info(f"{OFF}Skipping cover")
-            else:
+            elif not self.dry_run:
                 _get_extra(
                     meta["album"]["image"]["large"],
                     dirn,
@@ -204,7 +222,8 @@ class Download:
 
         if multiple:
             root_dir = os.path.join(root_dir, f"Disc {multiple}")
-            os.makedirs(root_dir, exist_ok=True)
+            if not self.dry_run:
+                os.makedirs(root_dir, exist_ok=True)
 
         filename = os.path.join(root_dir, f".{tmp_count:02}.tmp")
 
@@ -222,7 +241,63 @@ class Download:
             logger.info(f"{OFF}{track_title} was already downloaded")
             return
 
-        tqdm_download(url, filename, filename)
+        if self.dry_run:
+            #logger.info(f"{OFF}{track_title} won't be downloaded from {url}")
+            return
+
+        track_duration = track_metadata.get("duration")
+
+        max_retries = 5
+        last_error = None
+        for attempt in range(max_retries):
+            if attempt > 0:
+                wait = 2 ** attempt  # 2, 4, 8, 16 seconds
+                logger.warning(
+                    f"{YELLOW}Network error, retrying in {wait}s "
+                    f"(attempt {attempt + 1}/{max_retries})..."
+                )
+                time.sleep(wait)
+                if os.path.isfile(filename):
+                    os.remove(filename)
+                # Re-fetch a fresh download URL — the CDN rejects reused/stale URLs
+                try:
+                    fresh_url_dict = self.client.get_track_url(
+                        track_metadata["id"], fmt_id=self.quality
+                    )
+                    url = fresh_url_dict["url"]
+                    logger.info(f"Retrying \"{final_file}\" with URL: {url}")
+                except Exception as url_err:
+                    logger.warning(f"{YELLOW}Could not refresh URL: {url_err}")
+                time.sleep(wait)
+            try:
+                tqdm_download(url, filename, filename)
+                break
+            except (
+                requests.exceptions.ChunkedEncodingError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                ConnectionError,
+                OSError,
+            ) as e:
+                last_error = e
+                logger.warning(
+                    f"{YELLOW}Download attempt {attempt + 1} failed: {e}"
+                )
+                if os.path.isfile(final_file):
+                    logger.info(
+                        f"{GREEN}File \"{final_file}\" was injected, using it"
+                    )
+                    os.rename(final_file, filename)
+                    break
+        else:
+            logger.error(
+                f"{RED}Failed to download {track_title} after {max_retries} "
+                f"attempts (CDN issue). Skipping track..."
+            )
+            if os.path.isfile(filename):
+                os.remove(filename)
+            return
+
         tag_function = metadata.tag_mp3 if is_mp3 else metadata.tag_flac
         try:
             tag_function(
@@ -254,8 +329,8 @@ class Download:
     @staticmethod
     def _get_track_attr(meta, track_title, bit_depth, sampling_rate):
         return {
-            "album": sanitize_filename(meta["album"]["title"]),
-            "artist": sanitize_filename(meta["album"]["artist"]["name"]),
+            "album": meta["album"]["title"],
+            "artist": meta["album"]["artist"]["name"],
             "tracktitle": track_title,
             "year": meta["album"]["release_date_original"].split("-")[0],
             "bit_depth": bit_depth,
@@ -265,8 +340,11 @@ class Download:
     @staticmethod
     def _get_album_attr(meta, album_title, file_format, bit_depth, sampling_rate):
         return {
-            "artist": sanitize_filename(meta["artist"]["name"]),
-            "album": sanitize_filename(album_title),
+            "artist": meta["artist"]["name"],
+            # FIXME put in a PR
+            "albumartist": meta["artist"]["name"],
+            # /FIXME put in a PR
+            "album": album_title,
             "year": meta["release_date_original"].split("-")[0],
             "format": file_format,
             "bit_depth": bit_depth,
@@ -305,26 +383,41 @@ class Download:
             return ("Unknown", quality_met, None, None)
 
 
-def tqdm_download(url, fname, desc):
-    r = requests.get(url, allow_redirects=True, stream=True)
+def tqdm_download(url, fname, desc, duration=None):
+    playback_speed = 1.0 #1.5
+    tic = time.perf_counter()
+    r = requests.get(url, allow_redirects=True, stream=True, timeout=(10, 60))
     total = int(r.headers.get("content-length", 0))
     download_size = 0
+    try:
+        duration_str = "≤" + str(datetime.timedelta(seconds=duration)) + f"/{playback_speed:0.1f}" 
+    except TypeError:
+        duration_str = ""
     with open(fname, "wb") as file, tqdm(
         total=total,
         unit="iB",
         unit_scale=True,
         unit_divisor=1024,
         desc=desc,
-        bar_format=CYAN + "{n_fmt}/{total_fmt} /// {desc}",
+        bar_format=CYAN + "{n_fmt}/{total_fmt} /// {desc}"
+            + "        "
+            + "[{elapsed}+{remaining}" + duration_str + ", {rate_fmt}{postfix}]",
     ) as bar:
         for data in r.iter_content(chunk_size=1024):
             size = file.write(data)
+#            time.sleep(0.005)
             bar.update(size)
             download_size += size
+    toc = time.perf_counter()
+    elapsed_time = (toc - tic)
+    if duration is not None:
+        waiting_time = max(0, duration / playback_speed - elapsed_time)
+        time.sleep(waiting_time)
 
-    if total != download_size:
-        # https://stackoverflow.com/questions/69919912/requests-iter-content-thinks-file-is-complete-but-its-not
-        raise ConnectionError("File download was interrupted for " + fname)
+    if download_size < total:
+        raise ConnectionError(
+            f"Incomplete download ({download_size}/{total} bytes) for {fname}"
+        )
 
 
 def _get_description(item: dict, track_title, multiple=None):

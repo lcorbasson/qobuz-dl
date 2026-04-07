@@ -6,6 +6,8 @@ import requests
 from bs4 import BeautifulSoup as bso
 from pathvalidate import sanitize_filename
 
+import json
+
 from qobuz_dl.bundle import Bundle
 from qobuz_dl import downloader, qopy
 from qobuz_dl.color import CYAN, OFF, RED, YELLOW, DF, RESET
@@ -52,6 +54,7 @@ class QobuzDL:
         "{sampling_rate}kHz]",
         track_format="{tracknumber}. {tracktitle}",
         smart_discography=False,
+        dry_run=False,
     ):
         self.directory = create_and_return_dir(directory)
         self.quality = quality
@@ -68,6 +71,7 @@ class QobuzDL:
         self.folder_format = folder_format
         self.track_format = track_format
         self.smart_discography = smart_discography
+        self.dry_run = dry_run
 
     def initialize_client(self, email, pwd, app_id, secrets):
         self.client = qopy.Client(email, pwd, app_id, secrets)
@@ -88,6 +92,10 @@ class QobuzDL:
                 "to bypass this."
             )
             return
+        if not self.dry_run:
+            if album:
+                item_meta = self.client.get_album_meta(item_id)
+                self.trace_meta("album", item_id, item_meta)
         try:
             dloader = downloader.Download(
                 self.client,
@@ -101,9 +109,11 @@ class QobuzDL:
                 self.no_cover,
                 self.folder_format,
                 self.track_format,
+                self.dry_run,
             )
             dloader.download_id_by_type(not album)
-            handle_download_id(self.downloads_db, item_id, add_id=True)
+            if not self.dry_run:
+                handle_download_id(self.downloads_db, item_id, add_id=True)
         except (requests.exceptions.RequestException, NonStreamable) as e:
             logger.error(f"{RED}Error getting release: {e}. Skipping...")
 
@@ -134,6 +144,7 @@ class QobuzDL:
             return
         if type_dict["func"]:
             content = [item for item in type_dict["func"](item_id)]
+            self.trace_meta(url_type, item_id, content)
             content_name = content[0]["name"]
             logger.info(
                 f"{YELLOW}Downloading all the music from {content_name} "
@@ -165,7 +176,17 @@ class QobuzDL:
             if url_type == "playlist" and not self.no_m3u_for_playlists:
                 make_m3u(new_path)
         else:
+            item_meta = self.client.get_album_meta(item_id)
+            self.trace_meta(url_type, item_id, item_meta)
             self.download_from_id(item_id, type_dict["album"])
+
+    def trace_meta(self, item_type, item_id, item_meta):
+        traces_directory = create_and_return_dir(self.directory + '/.qobuz/' + item_type)
+        with open(traces_directory + '/' + item_id + '.json', "w") as trace:
+            try:
+                 print(json.dumps(item_meta, ensure_ascii=False, indent=4), file=trace)
+            except (TypeError, ValueError):
+                 print(content, file=trace)
 
     def download_list_of_urls(self, urls):
         if not urls or not isinstance(urls, list):

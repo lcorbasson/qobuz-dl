@@ -103,6 +103,9 @@ def add_common_arg(custom_parser, default_folder, default_quality):
         "--no-db", action="store_true", help="don't call the database"
     )
     custom_parser.add_argument(
+        "--dry-run", action="store_true", help="don't download the tracks"
+    )
+    custom_parser.add_argument(
         "-ff",
         "--folder-format",
         metavar="PATTERN",
@@ -148,12 +151,6 @@ def qobuz_dl_args(
         "--purge",
         action="store_true",
         help="purge/delete downloaded-IDs database",
-    )
-    parser.add_argument(
-        "-sc",
-        "--show-config",
-        action="store_true",
-        help="show configuration",
     )
 
     subparsers = parser.add_subparsers(

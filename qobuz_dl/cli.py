@@ -59,6 +59,7 @@ def _reset_config(config_file):
     config["DEFAULT"]["folder_format"] = DEFAULT_FOLDER
     config["DEFAULT"]["track_format"] = DEFAULT_TRACK
     config["DEFAULT"]["smart_discography"] = "false"
+    config["DEFAULT"]["dry_run"] = "false"
     with open(config_file, "w") as configfile:
         config.write(configfile)
     logging.info(
@@ -130,6 +131,7 @@ def main():
         no_database = config.getboolean("DEFAULT", "no_database")
         app_id = config["DEFAULT"]["app_id"]
         smart_discography = config.getboolean("DEFAULT", "smart_discography")
+        dry_run = config.getboolean("DEFAULT", "dry_run")
         folder_format = config["DEFAULT"]["folder_format"]
         track_format = config["DEFAULT"]["track_format"]
 
@@ -149,12 +151,6 @@ def main():
 
     if arguments.reset:
         sys.exit(_reset_config(CONFIG_FILE))
-
-    if arguments.show_config:
-        print(f"Configuation: {CONFIG_FILE}\nDatabase: {QOBUZ_DB}\n---")
-        with open(CONFIG_FILE, "r") as f:
-            print(f.read())
-        sys.exit()
 
     if arguments.purge:
         try:
@@ -176,6 +172,7 @@ def main():
         folder_format=arguments.folder_format or folder_format,
         track_format=arguments.track_format or track_format,
         smart_discography=arguments.smart_discography or smart_discography,
+        dry_run=arguments.dry_run or dry_run,
     )
     qobuz.initialize_client(email, password, app_id, secrets)
 
