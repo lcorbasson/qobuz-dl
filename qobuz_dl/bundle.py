@@ -14,17 +14,14 @@ _SEED_TIMEZONE_REGEX = re.compile(
 )
 _INFO_EXTRAS_REGEX = r'name:"\w+/(?P<timezone>{timezones})",info:"(?P<info>[\w=]+)",extras:"(?P<extras>[\w=]+)"'
 _APP_ID_REGEX = re.compile(
-    r'production:{api:{appId:"(?P<app_id>\d{9})",appSecret:"\w{32}"'
+    r'production:{api:{appId:"(?P<app_id>\d+)",appSecret:"\w+"'
 )
 
 _BUNDLE_URL_REGEX = re.compile(
-    r'<script src="(/resources/\d+\.\d+\.\d+-[a-z]\d{3}/bundle\.js)"></script>'
+    r'<script src="(/resources/\d+\.\d+\.\d+-[a-z]\d+/bundle\.js)"></script>'
 )
 
 _BASE_URL = "https://play.qobuz.com"
-_BUNDLE_URL_REGEX = re.compile(
-    r'<script src="(/resources/\d+\.\d+\.\d+-[a-z]\d{3}/bundle\.js)"></script>'
-)
 
 
 class Bundle:
@@ -37,7 +34,7 @@ class Bundle:
 
         bundle_url_match = _BUNDLE_URL_REGEX.search(response.text)
         if not bundle_url_match:
-            raise NotImplementedError("Bundle URL not found")
+            raise ValueError("Bundle URL not found")
 
         bundle_url = bundle_url_match.group(1)
 
@@ -50,7 +47,7 @@ class Bundle:
     def get_app_id(self):
         match = _APP_ID_REGEX.search(self._bundle)
         if not match:
-            raise NotImplementedError("Failed to match APP ID")
+            raise ValueError("Failed to match APP ID")
 
         return match.group("app_id")
 
