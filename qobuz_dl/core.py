@@ -176,7 +176,7 @@ class QobuzDL:
             self.trace_meta(url_type, item_id, content)
             content_name = content[0]["name"]
             logger.info(
-                f"{YELLOW}Downloading all the music from {content_name} "
+                f"{YELLOW}\nDownloading all the music from {content_name} "
                 f"({url_type})!"
             )
             new_path = create_and_return_dir(

@@ -262,7 +262,7 @@ class Download:
             logger.info(f"{OFF}{track_title} was already downloaded")
             return
 
-        logger.debug(f"{OFF+YELLOW}Track will be saved to {final_file}")
+        logger.debug(f"{OFF+YELLOW}Track will be saved to: {final_file}")
 
         track_duration = track_metadata.get("duration")
 
@@ -482,7 +482,7 @@ def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
                         bar.update(size)
                         segment_size += size
                     r.close()
-    
+
                     if segment_total and segment_total != segment_size:
                         raise ConnectionError("File download was interrupted for " + fname)
                     if segment == 1:
@@ -503,7 +503,7 @@ def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
             waiting_time = max(0, duration / playback_speed - elapsed_time)
             logger.debug(f"{OFF+YELLOW}Sleeping {waiting_time:0.0f} seconds to match playback time")
             time.sleep(waiting_time)
-    
+
         if segments == 0:
             if download_size < total:
                 raise ConnectionError(
@@ -518,7 +518,7 @@ def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
                         fname, remux.stderr.strip() or "ffmpeg exited with an error"
                     )
                 )
-    
+
     finally:
         if os.path.isfile(tmp_fname):
             os.remove(tmp_fname)
