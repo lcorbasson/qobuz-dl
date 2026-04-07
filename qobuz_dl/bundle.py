@@ -37,7 +37,7 @@ class Bundle:
 
         bundle_url_match = _BUNDLE_URL_REGEX.search(response.text)
         if not bundle_url_match:
-            raise NotImplementedError("Bundle URL found")
+            raise NotImplementedError("Bundle URL not found")
 
         bundle_url = bundle_url_match.group(1)
 

@@ -55,6 +55,7 @@ class QobuzDL:
         track_format="{tracknumber}. {tracktitle}",
         smart_discography=False,
         dry_run=False,
+        verbose=False,
     ):
         self.directory = create_and_return_dir(directory)
         self.quality = quality
@@ -72,6 +73,31 @@ class QobuzDL:
         self.track_format = track_format
         self.smart_discography = smart_discography
         self.dry_run = dry_run
+        self.verbose = verbose
+
+        if verbose:
+            logger.setLevel(logging.DEBUG)
+            logger.debug(f"{OFF+YELLOW}Verbose/debug mode activated.")
+
+        logger.debug("{}Parameters used: {}".format(OFF+YELLOW, {
+            'directory': self.directory,
+            'quality': self.quality,
+            'embed_art': self.embed_art,
+            'lucky_limit': self.lucky_limit,
+            'lucky_type': self.lucky_type,
+            'interactive_limit': self.interactive_limit,
+            'ignore_singles_eps': self.ignore_singles_eps,
+            'no_m3u_for_playlists': self.no_m3u_for_playlists,
+            'quality_fallback': self.quality_fallback,
+            'cover_og_quality': self.cover_og_quality,
+            'no_cover': self.no_cover,
+            'downloads_db': self.downloads_db,
+            'folder_format': self.folder_format,
+            'track_format': self.track_format,
+            'smart_discography': self.smart_discography,
+            'dry_run': self.dry_run,
+            'verbose': self.verbose,
+        }))
 
     def initialize_client(self, email, pwd, app_id, secrets):
         self.client = qopy.Client(email, pwd, app_id, secrets)
@@ -80,9 +106,11 @@ class QobuzDL:
     def get_tokens(self):
         bundle = Bundle()
         self.app_id = bundle.get_app_id()
+        logger.debug(f"App ID: {self.app_id}")
         self.secrets = [
             secret for secret in bundle.get_secrets().values() if secret
         ]  # avoid empty fields
+        logger.debug(f"Secrets: {self.secrets}")
 
     def download_from_id(self, item_id, album=True, alt_path=None):
         if handle_download_id(self.downloads_db, item_id, add_id=False):
@@ -102,14 +130,15 @@ class QobuzDL:
                 item_id,
                 alt_path or self.directory,
                 int(self.quality),
-                self.embed_art,
-                self.ignore_singles_eps,
-                self.quality_fallback,
-                self.cover_og_quality,
-                self.no_cover,
-                self.folder_format,
-                self.track_format,
-                self.dry_run,
+                embed_art=self.embed_art,
+                albums_only=self.ignore_singles_eps,
+                downgrade_quality=self.quality_fallback,
+                cover_og_quality=self.cover_og_quality,
+                no_cover=self.no_cover,
+                folder_format=self.folder_format,
+                track_format=self.track_format,
+                dry_run=self.dry_run,
+                verbose=self.verbose,
             )
             dloader.download_id_by_type(not album)
             if not self.dry_run:
@@ -182,7 +211,9 @@ class QobuzDL:
 
     def trace_meta(self, item_type, item_id, item_meta):
         traces_directory = create_and_return_dir(self.directory + '/.qobuz/' + item_type)
-        with open(traces_directory + '/' + item_id + '.json', "w") as trace:
+        trace_fname = traces_directory + '/' + item_id + '.json'
+        logger.debug(f"{OFF+YELLOW}Saved metadata to {trace_fname}")
+        with open(trace_fname, "w") as trace:
             try:
                  print(json.dumps(item_meta, ensure_ascii=False, indent=4), file=trace)
             except (TypeError, ValueError):

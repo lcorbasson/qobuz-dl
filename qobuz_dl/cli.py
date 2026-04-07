@@ -8,22 +8,19 @@ import sys
 from qobuz_dl.bundle import Bundle
 from qobuz_dl.color import GREEN, RED, YELLOW
 from qobuz_dl.commands import qobuz_dl_args
+from qobuz_dl.config import (
+    CONFIG_FILE,
+    CONFIG_PATH,
+    QOBUZ_DB,
+)
 from qobuz_dl.core import QobuzDL
-from qobuz_dl.downloader import DEFAULT_FOLDER, DEFAULT_TRACK
+from qobuz_dl.downloader import DEFAULT_FOLDER_FORMAT, DEFAULT_TRACK_FORMAT
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(message)s",
 )
 
-if os.name == "nt":
-    OS_CONFIG = os.environ.get("APPDATA")
-else:
-    OS_CONFIG = os.path.join(os.environ["HOME"], ".config")
-
-CONFIG_PATH = os.path.join(OS_CONFIG, "qobuz-dl")
-CONFIG_FILE = os.path.join(CONFIG_PATH, "config.ini")
-QOBUZ_DB = os.path.join(CONFIG_PATH, "qobuz_dl.db")
 
 
 def _reset_config(config_file):
@@ -56,10 +53,11 @@ def _reset_config(config_file):
     bundle = Bundle()
     config["DEFAULT"]["app_id"] = str(bundle.get_app_id())
     config["DEFAULT"]["secrets"] = ",".join(bundle.get_secrets().values())
-    config["DEFAULT"]["folder_format"] = DEFAULT_FOLDER
-    config["DEFAULT"]["track_format"] = DEFAULT_TRACK
+    config["DEFAULT"]["folder_format"] = DEFAULT_FOLDER_FORMAT
+    config["DEFAULT"]["track_format"] = DEFAULT_TRACK_FORMAT
     config["DEFAULT"]["smart_discography"] = "false"
     config["DEFAULT"]["dry_run"] = "false"
+    config["DEFAULT"]["verbose"] = "false"
     with open(config_file, "w") as configfile:
         config.write(configfile)
     logging.info(
@@ -132,6 +130,7 @@ def main():
         app_id = config["DEFAULT"]["app_id"]
         smart_discography = config.getboolean("DEFAULT", "smart_discography")
         dry_run = config.getboolean("DEFAULT", "dry_run")
+        verbose = config.getboolean("DEFAULT", "verbose")
         folder_format = config["DEFAULT"]["folder_format"]
         track_format = config["DEFAULT"]["track_format"]
 
@@ -148,7 +147,7 @@ def main():
                 f"{RED}Your config file is corrupted: {error}! "
                 "Run 'qobuz-dl -r' to fix this."
             )
-
+    
     if arguments.reset:
         sys.exit(_reset_config(CONFIG_FILE))
 
@@ -173,6 +172,7 @@ def main():
         track_format=arguments.track_format or track_format,
         smart_discography=arguments.smart_discography or smart_discography,
         dry_run=arguments.dry_run or dry_run,
+        verbose=arguments.verbose or verbose,
     )
     qobuz.initialize_client(email, password, app_id, secrets)
 

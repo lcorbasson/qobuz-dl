@@ -106,6 +106,9 @@ def add_common_arg(custom_parser, default_folder, default_quality):
         "--dry-run", action="store_true", help="don't download the tracks"
     )
     custom_parser.add_argument(
+        "--verbose", action="store_true", help="be verbose, show debugging messages"
+    )
+    custom_parser.add_argument(
         "-ff",
         "--folder-format",
         metavar="PATTERN",

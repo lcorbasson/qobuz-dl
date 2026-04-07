@@ -11,6 +11,7 @@ def read_file(fname):
 requirements = [
     "pathvalidate",
     "requests",
+    "cryptography",
     "mutagen",
     "tqdm",
     "pick==1.6.0",
