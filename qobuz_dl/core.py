@@ -11,6 +11,7 @@ import json
 from qobuz_dl.bundle import Bundle
 from qobuz_dl import downloader, qopy
 from qobuz_dl.color import CYAN, OFF, RED, YELLOW, DF, RESET
+from qobuz_dl.config import USER_AGENT
 from qobuz_dl.exceptions import NonStreamable
 from qobuz_dl.db import create_db, handle_download_id
 from qobuz_dl.utils import (
@@ -415,8 +416,15 @@ class QobuzDL:
     def download_lastfm_pl(self, playlist_url):
         # Apparently, last fm API doesn't have a playlist endpoint. If you
         # find out that it has, please fix this!
+        headers = {
+            'User-Agent': USER_AGENT,
+        }
         try:
-            r = requests.get(playlist_url, timeout=10)
+            r = requests.get(
+                playlist_url,
+                headers=headers,
+                timeout=10,
+            )
         except requests.exceptions.RequestException as e:
             logger.error(f"{RED}Playlist download failed: {e}")
             return

@@ -5,6 +5,8 @@ from collections import OrderedDict
 
 from requests import Session
 
+from qobuz_dl.config import USER_AGENT
+
 # Modified code based on DashLt's spoofbuz
 
 logger = logging.getLogger(__name__)
@@ -27,6 +29,9 @@ _BASE_URL = "https://play.qobuz.com"
 class Bundle:
     def __init__(self):
         self._session = Session()
+        self._session.headers.update({
+            'User-Agent': USER_AGENT,
+        })
 
         logger.debug("Getting logging page")
         response = self._session.get(f"{_BASE_URL}/login")

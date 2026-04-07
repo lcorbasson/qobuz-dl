@@ -13,6 +13,7 @@ import time
 
 import qobuz_dl.metadata as metadata
 from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN
+from qobuz_dl.config import USER_AGENT
 from qobuz_dl.exceptions import NonStreamable
 
 QL_DOWNGRADE = "FormatRestrictedByFormatAvailability"
@@ -430,8 +431,19 @@ def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
 
     tic = time.perf_counter()
     tmp_fname = fname + ".mp4"
+    headers = {
+        'User-Agent': USER_AGENT,
+    }
+
     if segments == 0:
-        r = requests.get(url, allow_redirects=True, stream=True, timeout=(10, 60))
+        r = requests.get(
+            url,
+            allow_redirects=True,
+            stream=True,
+            headers=headers,
+            timeout=(10, 60),
+        )
+        r.raise_for_status()
         total = int(r.headers.get("content-length", 0))
     else:
         segment_uuid = None
@@ -440,15 +452,17 @@ def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
             r = requests.head(
                 url.replace("$SEGMENT$", str(segment)),
                 allow_redirects=True,
+                headers=headers,
             )
             r.raise_for_status()
             total += int(r.headers.get("content-length", 0))
-    download_size = 0
+
     try:
         duration_str = "≤" + str(datetime.timedelta(seconds=duration)) + f"/{playback_speed:0.1f}" 
     except TypeError:
         duration_str = ""
 
+    download_size = 0
     try:
         with open(tmp_fname, "wb") as file, tqdm(
             total=total,
@@ -471,6 +485,7 @@ def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
                         url.replace("$SEGMENT$", str(segment)),
                         allow_redirects=True,
                         stream=True,
+                        headers=headers,
                     )
                     r.raise_for_status()
                     segment_total = int(r.headers.get("content-length", 0))
@@ -481,6 +496,7 @@ def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
                         size = len(data)
                         bar.update(size)
                         segment_size += size
+                    download_size += segment_size
                     r.close()
 
                     if segment_total and segment_total != segment_size:

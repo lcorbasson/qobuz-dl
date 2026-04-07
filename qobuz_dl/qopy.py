@@ -22,9 +22,10 @@ from qobuz_dl.exceptions import (
 )
 from qobuz_dl.color import GREEN, RED, YELLOW, OFF
 from qobuz_dl.config import (
-    HOWTO_RESET,
-    HOWTO_FRESH_TOKEN,
     CONFIG_FILE,
+    HOWTO_FRESH_TOKEN,
+    HOWTO_RESET,
+    USER_AGENT,
 )
 
 logger = logging.getLogger(__name__)
@@ -38,7 +39,7 @@ class Client:
         self.session = requests.Session()
         self.session.headers.update(
             {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:83.0) Gecko/20100101 Firefox/83.0",
+                "User-Agent": USER_AGENT,
                 "X-App-Id": self.id,
             }
         )
