@@ -434,41 +434,41 @@ def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
     else:
         logger.debug(f"{OFF+YELLOW}Downloading from URL: {url}")
 
-    tic = time.perf_counter()
+    try:
+        duration_str = "≤" + str(datetime.timedelta(seconds=duration)) + f"/{playback_speed:0.1f}" 
+    except TypeError:
+        duration_str = ""
     tmp_fname = fname + ".mp4"
     headers = {
         'User-Agent': USER_AGENT,
     }
 
-    if segments == 0:
-        r = requests.get(
-            url,
-            allow_redirects=True,
-            stream=True,
-            headers=headers,
-            timeout=(10, 60),
-        )
-        r.raise_for_status()
-        total = int(r.headers.get("content-length", 0))
-    else:
-        segment_uuid = None
-        total = 0
-        for segment in range(segments):
-            r = requests.head(
-                url.replace("$SEGMENT$", str(segment)),
+    try:
+        tic = time.perf_counter()
+        if segments == 0:
+            r = requests.get(
+                url,
                 allow_redirects=True,
+                stream=True,
                 headers=headers,
+                timeout=(10, 60),
             )
             r.raise_for_status()
-            total += int(r.headers.get("content-length", 0))
+            total = int(r.headers.get("content-length", 0))
+        else:
+            segment_uuid = None
+            total = 0
+            for segment in range(segments):
+                r = requests.head(
+                    url.replace("$SEGMENT$", str(segment)),
+                    allow_redirects=True,
+                    headers=headers,
+                )
+                r.raise_for_status()
+                total += int(r.headers.get("content-length", 0))
+                r.close()
 
-    try:
-        duration_str = "≤" + str(datetime.timedelta(seconds=duration)) + f"/{playback_speed:0.1f}" 
-    except TypeError:
-        duration_str = ""
-
-    download_size = 0
-    try:
+        download_size = 0
         with open(tmp_fname, "wb") as file, tqdm(
             total=total,
             unit="iB",
@@ -481,6 +481,7 @@ def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
         ) as bar:
             if segments == 0:
                 for data in r.iter_content(chunk_size=1024):
+                    r.raise_for_status()
                     size = file.write(data)
                     bar.update(size)
                     download_size += size
@@ -497,6 +498,7 @@ def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
                     segment_size = 0
                     segment_data = bytearray()
                     for data in r.iter_content(chunk_size=1024):
+                        r.raise_for_status()
                         segment_data.extend(data)
                         size = len(data)
                         bar.update(size)
@@ -541,6 +543,8 @@ def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
                 )
 
     finally:
+        if r:
+            r.close()
         if os.path.isfile(tmp_fname):
             os.remove(tmp_fname)
 
