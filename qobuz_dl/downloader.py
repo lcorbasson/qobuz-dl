@@ -140,8 +140,6 @@ class Download:
         media_numbers = [track["media_number"] for track in meta["tracks"]["items"]]
         is_multiple = True if len([*{*media_numbers}]) > 1 else False
         for i in meta["tracks"]["items"]:
-            if count > 0:
-                time.sleep(1)  # brief pause between tracks to avoid CDN rate limiting
             if not i.get("streamable"):
                 logger.info(f"{OFF}{i.get('title', 'Track')} is not streamable. Skipping")
                 count = count + 1

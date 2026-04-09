@@ -37,12 +37,10 @@ class Client:
         self.secrets = secrets
         self.id = str(app_id)
         self.session = requests.Session()
-        self.session.headers.update(
-            {
-                "User-Agent": USER_AGENT,
-                "X-App-Id": self.id,
-            }
-        )
+        self.session.headers.update({
+            "User-Agent": USER_AGENT,
+            "X-App-Id": self.id,
+        })
         self.base = "https://www.qobuz.com/api.json/0.2/"
         self.sec = None
         self.session_id = None
@@ -250,6 +248,8 @@ class Client:
         return self.api_call("track/get", id=id)
 
     def get_track_url(self, id, fmt_id, force_segments=False):
+        time.sleep(1)  # brief pause between tracks to avoid CDN rate limiting
+
         # Quick fallback for MP3 where direct URLs always seem to work
         if int(fmt_id) == 5:
             track = self.api_call("track/getFileUrl", id=id, fmt_id=fmt_id)
