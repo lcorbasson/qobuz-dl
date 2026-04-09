@@ -1,7 +1,7 @@
 import logging
 import sqlite3
 
-from qobuz_dl.color import YELLOW, RED
+from qobuz_dl.color import YELLOW, RED, OFF
 
 logger = logging.getLogger(__name__)
 
@@ -30,6 +30,7 @@ def handle_download_id(db_path, item_id, add_id=False):
                     (item_id,),
                 )
                 conn.commit()
+                logger.debug(f"{OFF+YELLOW}ID {item_id} marked as downloaded in the database.")
             except sqlite3.Error as e:
                 logger.error(f"{RED}Unexpected DB error: {e}")
         else:

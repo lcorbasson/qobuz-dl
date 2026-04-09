@@ -108,7 +108,7 @@ class Download:
         logger.info(
             f"\n{YELLOW}Downloading: {album_title}\nQuality: {file_format}"
             f" ({bit_depth}/{sampling_rate})\n"
-            f"{url}\n"
+            f"{url}"
         )
         album_attr = self._get_album_attr(
             meta, album_title, file_format, bit_depth, sampling_rate
@@ -138,7 +138,13 @@ class Download:
             except:  # noqa
                 pass
         media_numbers = [track["media_number"] for track in meta["tracks"]["items"]]
-        is_multiple = True if len([*{*media_numbers}]) > 1 else False
+        track_count = len(meta['tracks']['items'])
+        media_count = len([*{*media_numbers}])
+        is_multiple = True if media_count > 1 else False
+        logger.info(
+            f"{YELLOW}{track_count} tracks in {media_count} media\n"
+        )
+        last_errors = []
         for i in meta["tracks"]["items"]:
             if not i.get("streamable"):
                 logger.info(f"{OFF}{i.get('title', 'Track')} is not streamable. Skipping")
@@ -147,19 +153,29 @@ class Download:
             parse = self.client.get_track_url(i["id"], fmt_id=self.quality)
             if "sample" not in parse and parse["sampling_rate"]:
                 is_mp3 = True if int(self.quality) == 5 else False
-                self._download_and_tag(
-                    dirn,
-                    count,
-                    parse,
-                    i,
-                    meta,
-                    False,
-                    is_mp3,
-                    i["media_number"] if is_multiple else None,
-                )
+                try:
+                    self._download_and_tag(
+                        dirn,
+                        count,
+                        parse,
+                        i,
+                        meta,
+                        False,
+                        is_mp3,
+                        i["media_number"] if is_multiple else None,
+                    )
+                except Exception as e:
+                    last_errors.append(e)
             else:
                 logger.info(f"{OFF}Demo. Skipping")
             count = count + 1
+        if len(last_errors) > 0:
+            logger.error(
+                f"{RED}Errors encountered while downloading {album_title}:"
+                + '\n  - '
+                + '\n  - '.join(str(e) for e in last_errors)
+            )
+            raise last_errors[0]
         logger.info(f"{GREEN}Completed")
 
     def download_track(self):
@@ -272,61 +288,77 @@ class Download:
 
         max_retries = 5
         last_error = None
-        for attempt in range(max_retries):
-            if attempt > 0:
-                wait = 2 ** attempt  # 2, 4, 8, 16 seconds
-                logger.warning(
-                    f"{YELLOW}Network error, retrying in {wait}s "
-                    f"(attempt {attempt + 1}/{max_retries})..."
-                )
-                time.sleep(wait)
-                if os.path.isfile(filename):
-                    os.remove(filename)
-                # Re-fetch a fresh download URL — the CDN rejects reused/stale URLs
-                try:
-                    track_url_dict = self.client.get_track_url(
-                        track_metadata["id"], fmt_id=self.quality
+        for force_segments in (False, True):
+            # Try with the normal mode first, then try using segments
+            for attempt in range(max_retries):
+                if attempt > 0:
+                    wait = 2 ** attempt  # 2, 4, 8, 16 seconds
+                    logger.warning(
+                        f"{YELLOW}Network error, retrying in {wait}s "
+                        f"(attempt {attempt + 1}/{max_retries})..."
                     )
+                    time.sleep(wait)
+                    if os.path.isfile(filename):
+                        os.remove(filename)
+                    # Re-fetch a fresh download URL — the CDN rejects reused/stale URLs
                     try:
-                        url = track_url_dict["url"]
-                    except KeyError:
-                        url = track_url_dict["url_template"]
-                    logger.info(f"Retrying \"{final_file}\" with URL: {url}")
-                except Exception as url_err:
-                    logger.warning(f"{YELLOW}Could not refresh URL: {url_err}")
-                time.sleep(wait)
-            try:
-                if self.dry_run:
-                    logger.info(f"{OFF}{track_title} won't be downloaded from {url}")
-                    return
-
-                tqdm_download(track_url_dict, filename, filename, duration=track_duration)
-                break
-            except (
-                requests.exceptions.ChunkedEncodingError,
-                requests.exceptions.ConnectionError,
-                requests.exceptions.Timeout,
-                ConnectionError,
-                OSError,
-            ) as e:
-                last_error = e
-                logger.warning(
-                    f"{YELLOW}Download attempt {attempt + 1} failed: {e}"
-                )
-                if os.path.isfile(final_file):
-                    logger.info(
-                        f"{GREEN}File \"{final_file}\" was injected, using it"
-                    )
-                    os.rename(final_file, filename)
+                        track_url_dict = self.client.get_track_url(
+                            track_metadata["id"],
+                            fmt_id=self.quality,
+                            force_segments=force_segments,
+                        )
+                        try:
+                            url = track_url_dict["url"]
+                        except KeyError:
+                            url = track_url_dict["url_template"]
+                        logger.info(f"Retrying \"{final_file}\" with URL: {url}")
+                    except Exception as url_err:
+                        logger.warning(f"{YELLOW}Could not refresh URL: {url_err}")
+                    time.sleep(wait)
+                try:
+                    if self.dry_run:
+                        logger.info(f"{OFF}{track_title} won't be downloaded from {url}")
+                        return
+    
+                    tqdm_download(track_url_dict, filename, filename, duration=track_duration)
                     break
+                except (
+                    requests.exceptions.ChunkedEncodingError,
+                    requests.exceptions.ConnectionError,
+                    requests.exceptions.Timeout,
+                    ConnectionError,
+                    OSError,
+                ) as e:
+                    last_error = e
+                    logger.warning(
+                        f"{YELLOW}Download attempt {attempt + 1} failed: {e}"
+                    )
+                    if os.path.isfile(final_file):
+                        logger.info(
+                            f"{GREEN}File \"{final_file}\" was injected, using it"
+                        )
+                        os.rename(final_file, filename)
+                        break
+            if not force_segments:
+                logger.warning(
+                    f"{YELLOW}Failed to download {track_title} after {max_retries} "
+                    f"attempts (CDN issue). Retrying with a segments-based download."
+                )
+            else:
+                logger.warning(
+                    f"{YELLOW}Failed to download {track_title} after {max_retries} "
+                    f"attempts using segments (Web Player mode)."
+                )
         else:
             logger.error(
-                f"{RED}Failed to download {track_title} after {max_retries} "
-                f"attempts (CDN issue). Skipping track..."
+                f"{RED}Failed to download {track_title} after trying all available modes. "
+                f"Skipping track..."
             )
             if os.path.isfile(filename):
                 os.remove(filename)
-            return
+            if last_error:
+                raise last_error
+            raise Exception(f"{RED}Failed to download {track_title}")
 
         tag_function = metadata.tag_mp3 if is_mp3 else metadata.tag_flac
         try:
