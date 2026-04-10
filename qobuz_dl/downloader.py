@@ -293,64 +293,69 @@ class Download:
 
         track_duration = track_metadata.get("duration")
 
-        done = False
         max_retries = 5
         last_error = None
-        for force_segments in (False, True):
-            # Try with the normal mode first, then try using segments
-            for attempt in range(max_retries):
-                if attempt > 0:
-                    wait = 2 ** attempt  # 2, 4, 8, 16 seconds
-                    logger.warning(
-                        f"{YELLOW}Network error, retrying in {wait}s "
-                        f"(attempt {attempt + 1}/{max_retries})..."
-                    )
-                    time.sleep(wait)
-                    if os.path.isfile(filename):
-                        os.remove(filename)
-                    # Re-fetch a fresh download URL — the CDN rejects reused/stale URLs
-                    try:
-                        track_url_dict = self.client.get_track_url(
-                            track_metadata["id"],
-                            fmt_id=self.quality,
-                            force_segments=force_segments,
-                        )
-                        try:
-                            url = track_url_dict["url"]
-                        except KeyError:
-                            url = track_url_dict["url_template"]
-                        logger.debug(f"{OFF+YELLOW}Retrying \"{final_file}\" with URL: {url}")
-                    except Exception as url_err:
-                        logger.warning(f"{YELLOW}Could not refresh URL: {url_err}")
-                    time.sleep(wait)
+        # Try with the normal mode first, then try using segments
+        attempts = [
+            {
+                'force_segments_mode': force_segments_mode,
+                'mode_retries': mode_retries,
+            }
+            for force_segments_mode in (False, True)
+                for mode_retries in range(max_retries)
+        ]
+        for attempt in attempts:
+            force_segments_mode = attempt['force_segments_mode']
+            mode_retries = attempt['mode_retries']
+            if mode_retries > 0:
+                wait = 2 ** mode_retries  # 2, 4, 8, 16 seconds
+                logger.warning(
+                    f"{YELLOW}Network error, retrying in {wait}s "
+                    f"(attempt {mode_retries + 1}/{max_retries})..."
+                )
+                time.sleep(wait)
+                if os.path.isfile(filename):
+                    os.remove(filename)
+                # Re-fetch a fresh download URL — the CDN rejects reused/stale URLs
                 try:
-                    if self.dry_run:
-                        logger.info(f"{OFF}{track_title} won't be downloaded from {url}")
-                        return
-    
-                    done = tqdm_download(track_url_dict, filename, filename, duration=track_duration)
-                    break
-                except (
-                    requests.exceptions.ChunkedEncodingError,
-                    requests.exceptions.ConnectionError,
-                    requests.exceptions.Timeout,
-                    ConnectionError,
-                    OSError,
-                ) as e:
-                    last_error = e
-                    logger.warning(
-                        f"{YELLOW}Download attempt {attempt + 1} failed: {str(e)}"
+                    track_url_dict = self.client.get_track_url(
+                        track_metadata["id"],
+                        fmt_id=self.quality,
+                        force_segments_mode=force_segments_mode,
                     )
-                    if os.path.isfile(final_file):
-                        logger.info(
-                            f"{GREEN}File \"{final_file}\" was injected, using it"
-                        )
-                        os.rename(final_file, filename)
-                        done = True
-                        break
-            if done:
+                    try:
+                        url = track_url_dict["url"]
+                    except KeyError:
+                        url = track_url_dict["url_template"]
+                    logger.debug(f"{OFF+YELLOW}Retrying \"{final_file}\" with URL: {url}")
+                except Exception as url_err:
+                    logger.warning(f"{YELLOW}Could not refresh URL: {url_err}")
+                time.sleep(wait)
+            try:
+                if self.dry_run:
+                    logger.info(f"{OFF}{track_title} won't be downloaded from {url}")
+                    return
+
+                tqdm_download(track_url_dict, filename, filename, duration=track_duration)
                 break
-            if not force_segments:
+            except (
+                requests.exceptions.ChunkedEncodingError,
+                requests.exceptions.ConnectionError,
+                requests.exceptions.Timeout,
+                ConnectionError,
+                OSError,
+            ) as e:
+                last_error = e
+                logger.warning(
+                    f"{YELLOW}Download attempt {mode_retries + 1} failed: {str(e)}"
+                )
+                if os.path.isfile(final_file):
+                    logger.info(
+                        f"{GREEN}File \"{final_file}\" was injected, using it"
+                    )
+                    os.rename(final_file, filename)
+                    break
+            if not force_segments_mode:
                 logger.warning(
                     f"{YELLOW}Failed to download {track_title} after {max_retries} "
                     f"attempts (CDN issue). Retrying with a segments-based download."
