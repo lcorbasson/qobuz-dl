@@ -293,6 +293,7 @@ class Download:
 
         track_duration = track_metadata.get("duration")
 
+        done = False
         max_retries = 5
         last_error = None
         for force_segments in (False, True):
@@ -327,7 +328,7 @@ class Download:
                         logger.info(f"{OFF}{track_title} won't be downloaded from {url}")
                         return
     
-                    tqdm_download(track_url_dict, filename, filename, duration=track_duration)
+                    done = tqdm_download(track_url_dict, filename, filename, duration=track_duration)
                     break
                 except (
                     requests.exceptions.ChunkedEncodingError,
@@ -338,14 +339,17 @@ class Download:
                 ) as e:
                     last_error = e
                     logger.warning(
-                        f"{YELLOW}Download attempt {attempt + 1} failed: {e}"
+                        f"{YELLOW}Download attempt {attempt + 1} failed: {str(e)}"
                     )
                     if os.path.isfile(final_file):
                         logger.info(
                             f"{GREEN}File \"{final_file}\" was injected, using it"
                         )
                         os.rename(final_file, filename)
+                        done = True
                         break
+            if done:
+                break
             if not force_segments:
                 logger.warning(
                     f"{YELLOW}Failed to download {track_title} after {max_retries} "
@@ -451,6 +455,7 @@ class Download:
 
 
 def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
+    done = False
     segments = 0
     # `url` can be a string or a dict, let's sort this out
     if isinstance(url, collections.abc.Mapping):
@@ -576,12 +581,14 @@ def tqdm_download(url, fname, desc, duration=None, playback_speed=1.0):
                         fname, remux.stderr.strip() or "ffmpeg exited with an error"
                     )
                 )
+        done = True
 
     finally:
         if r:
             r.close()
         if os.path.isfile(tmp_fname):
             os.remove(tmp_fname)
+        return done
 
 
 def _get_qobuz_segment_uuid(segment_data):
