@@ -1,2 +1,4 @@
-Qobuz Downloads
+Qobuz Downloads/
+build/
 __pycache__
+*.sw?
