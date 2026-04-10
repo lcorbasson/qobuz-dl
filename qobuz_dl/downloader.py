@@ -14,7 +14,7 @@ import time
 import qobuz_dl.metadata as metadata
 from qobuz_dl.color import OFF, GREEN, RED, YELLOW, CYAN
 from qobuz_dl.config import USER_AGENT
-from qobuz_dl.exceptions import NonStreamable
+from qobuz_dl.exceptions import DownloadError, Ignored, NonStreamable
 
 QL_DOWNGRADE = "FormatRestrictedByFormatAvailability"
 # used in case of error
@@ -79,49 +79,53 @@ class Download:
         count = 0
         meta = self.client.get_album_meta(self.item_id)
 
-        if not meta.get("streamable"):
-            raise NonStreamable("This release is not streamable")
-
-        if self.albums_only and (
-            meta.get("release_type") != "album"
-            or meta.get("artist").get("name") == "Various Artists"
-        ):
-            logger.info(f'{OFF}Ignoring Single/EP/VA: {meta.get("title", "n/a")}')
-            return
-
-        album_title = _get_title(meta)
-
-        format_info = self._get_format(meta)
-        file_format, quality_met, bit_depth, sampling_rate = format_info
-
-        if not self.downgrade_quality and not quality_met:
-            logger.info(
-                f"{OFF}Skipping {album_title} as it doesn't meet quality requirement"
-            )
-            return
-
         try:
-            url = meta.get("url")
-        except KeyError:
-            logger.info(f"{OFF}URL not found")
+            if not meta.get("streamable"):
+                raise NonStreamable("This release is not streamable")
 
-        logger.info(
-            f"\n{YELLOW}Downloading: {album_title}\nQuality: {file_format}"
-            f" ({bit_depth}/{sampling_rate})\n"
-            f"{url}"
-        )
+            if self.albums_only and (
+                meta.get("release_type") != "album"
+                or meta.get("artist").get("name") == "Various Artists"
+            ):
+                raise Ignored(f'{OFF}Ignoring Single/EP/VA: {meta.get("title", "n/a")}')
+
+            album_title = _get_title(meta)
+
+            format_info = self._get_format(meta)
+            file_format, quality_met, bit_depth, sampling_rate = format_info
+
+            if not self.downgrade_quality and not quality_met:
+                raise Ignored(
+                    f"{OFF}Skipping {album_title} as it doesn't meet quality requirement"
+                )
+
+            url = meta.get("url")
+
+            logger.info(
+                f"\n{YELLOW}Downloading: {album_title}\nQuality: {file_format}"
+                f" ({bit_depth}/{sampling_rate})\n"
+                f"{url}"
+            )
+            if not self.dry_run:
+                self.client.trace_meta(self.path, "album", self.item_id, meta)
+
+        except Exception as e:
+            if isinstance(e, Ignored):
+                logger.info(e)
+                return
+            else:
+                raise e
+
         album_attr = self._get_album_attr(
             meta, album_title, file_format, bit_depth, sampling_rate
         )
         folder_format, track_format = _clean_format_str(
             self.folder_format, self.track_format, file_format
         )
-        # FIXME put in a PR
         sanitized_album_attr = {
             attr: sanitize_filename(str(value)) for attr, value in album_attr.items()
         }
         sanitized_title = sanitize_filepath(folder_format.format(**sanitized_album_attr))
-        # /FIXME put in a PR
         dirn = os.path.join(self.path, sanitized_title)
         logger.debug(f"{OFF+YELLOW}Release folder: {dirn}")
         os.makedirs(dirn, exist_ok=True)
@@ -142,40 +146,43 @@ class Download:
         media_count = len([*{*media_numbers}])
         is_multiple = True if media_count > 1 else False
         logger.info(
-            f"{YELLOW}{track_count} tracks in {media_count} media\n"
+            f"{YELLOW}{track_count} tracks in {media_count} media"
         )
         last_errors = []
-        for i in meta["tracks"]["items"]:
-            if not i.get("streamable"):
-                logger.info(f"{OFF}{i.get('title', 'Track')} is not streamable. Skipping")
+        try:
+            for i in meta["tracks"]["items"]:
+                if not i.get("streamable"):
+                    logger.info(f"{OFF}{i.get('title', 'Track')} is not streamable. Skipping")
+                    count = count + 1
+                    continue
+                parse = self.client.get_track_url(i["id"], fmt_id=self.quality)
+                if "sample" not in parse and parse["sampling_rate"]:
+                    is_mp3 = True if int(self.quality) == 5 else False
+                    try:
+                        self._download_and_tag(
+                            dirn,
+                            count,
+                            parse,
+                            i,
+                            meta,
+                            False,
+                            is_mp3,
+                            i["media_number"] if is_multiple else None,
+                        )
+                    except Exception as e:
+                        logger.warning(e)
+                        last_errors.append(e)
+                else:
+                    logger.info(f"{OFF}Demo. Skipping")
                 count = count + 1
-                continue
-            parse = self.client.get_track_url(i["id"], fmt_id=self.quality)
-            if "sample" not in parse and parse["sampling_rate"]:
-                is_mp3 = True if int(self.quality) == 5 else False
-                try:
-                    self._download_and_tag(
-                        dirn,
-                        count,
-                        parse,
-                        i,
-                        meta,
-                        False,
-                        is_mp3,
-                        i["media_number"] if is_multiple else None,
-                    )
-                except Exception as e:
-                    last_errors.append(e)
-            else:
-                logger.info(f"{OFF}Demo. Skipping")
-            count = count + 1
-        if len(last_errors) > 0:
-            logger.error(
-                f"{RED}Errors encountered while downloading {album_title}:"
-                + '\n  - '
-                + '\n  - '.join(str(e) for e in last_errors)
-            )
-            raise last_errors[0]
+        finally:
+            if len(last_errors) > 0:
+                logger.error(
+                    f"{RED}Errors encountered while downloading {album_title}:"
+                    + '\n  - '
+                    + '\n  - '.join(str(e) for e in last_errors)
+                )
+                raise last_errors[0]
         logger.info(f"{GREEN}Completed")
 
     def download_track(self):
@@ -311,7 +318,7 @@ class Download:
                             url = track_url_dict["url"]
                         except KeyError:
                             url = track_url_dict["url_template"]
-                        logger.info(f"Retrying \"{final_file}\" with URL: {url}")
+                        logger.debug(f"{OFF+YELLOW}Retrying \"{final_file}\" with URL: {url}")
                     except Exception as url_err:
                         logger.warning(f"{YELLOW}Could not refresh URL: {url_err}")
                     time.sleep(wait)
@@ -358,7 +365,7 @@ class Download:
                 os.remove(filename)
             if last_error:
                 raise last_error
-            raise Exception(f"{RED}Failed to download {track_title}")
+            raise DownloadError(f"{RED}Failed to download {track_title}")
 
         tag_function = metadata.tag_mp3 if is_mp3 else metadata.tag_flac
         try:
@@ -403,9 +410,7 @@ class Download:
     def _get_album_attr(meta, album_title, file_format, bit_depth, sampling_rate):
         return {
             "artist": meta["artist"]["name"],
-            # FIXME put in a PR
             "albumartist": meta["artist"]["name"],
-            # /FIXME put in a PR
             "album": album_title,
             "year": meta["release_date_original"].split("-")[0],
             "format": file_format,

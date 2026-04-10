@@ -2,6 +2,14 @@ class AuthenticationError(Exception):
     pass
 
 
+class DownloadError(Exception):
+    pass
+
+
+class Ignored(Exception):
+    pass
+
+
 class IneligibleError(Exception):
     pass
 

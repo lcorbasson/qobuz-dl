@@ -8,6 +8,8 @@ import logging
 import os
 import time
 
+import json
+
 import requests
 from cryptography.hazmat.primitives import hashes, padding
 from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
@@ -26,6 +28,9 @@ from qobuz_dl.config import (
     HOWTO_FRESH_TOKEN,
     HOWTO_RESET,
     USER_AGENT,
+)
+from qobuz_dl.utils import (
+    create_and_return_dir,
 )
 
 logger = logging.getLogger(__name__)
@@ -289,6 +294,16 @@ class Client:
 
     def get_label_meta(self, id):
         return self.multi_meta("label/get", "albums_count", id, None)
+
+    def trace_meta(self, directory, item_type, item_id, item_meta):
+        traces_directory = create_and_return_dir(directory + '/.qobuz/' + item_type)
+        trace_fname = traces_directory + '/' + item_id + '.json'
+        logger.debug(f"{OFF+YELLOW}Saved metadata to {trace_fname}")
+        with open(trace_fname, "w") as trace:
+            try:
+                 print(json.dumps(item_meta, ensure_ascii=False, indent=4), file=trace)
+            except (TypeError, ValueError):
+                 print(content, file=trace)
 
     def search_albums(self, query, limit):
         return self.api_call("album/search", query=query, limit=limit)
